@@ -25,7 +25,12 @@ urlpatterns = [
     ),
     path(
         "books/available/",
-        views.AvailableBookListAPIView.as_view(),
+        views.AvailableBooksAPIView.as_view(),
         name="available_books",
+    ),
+    path(
+        "borrowings/active/",
+        views.ActiveBorrowingsAPIView.as_view(),
+        name="active_borrowings",
     ),
 ]

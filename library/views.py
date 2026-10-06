@@ -1,6 +1,15 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .filters import (
+    ActiveBorrowingsFilterBackend,
+    AvailableBooksFilterBackend,
+    BookFilter,
+    BorrowingFilter,
+    MinPagesFilterBackend,
+)
 from .models import Author, Book, Borrowing
 from .serializers import (
     AuthorSerializer,
@@ -31,6 +40,8 @@ class AuthorDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class BookListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
     queryset = Book.objects.select_related("author").all()
     serializer_class = BookSerializer
+    filterset_class = BookFilter
+    filter_backends = [DjangoFilterBackend, MinPagesFilterBackend]
 
 
 class BookDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -41,8 +52,22 @@ class BookDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class BorrowingListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
     queryset = Borrowing.objects.select_related("book", "reader").all()
     serializer_class = BorrowingSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_class = BorrowingFilter
 
 
-class AvailableBookListAPIView(CountDataListMixin, generics.ListAPIView):
-    queryset = Book.objects.select_related("author").filter(available_copies__gt=0)
+class AvailableBooksAPIView(CountDataListMixin, generics.ListAPIView):
+    queryset = Book.objects.select_related("author").order_by("pk")
     serializer_class = BookSerializer
+    filterset_class = BookFilter
+    filter_backends = [DjangoFilterBackend, AvailableBooksFilterBackend]
+
+
+class ActiveBorrowingsAPIView(CountDataListMixin, generics.ListAPIView):
+    queryset = Borrowing.objects.select_related("book", "reader").order_by(
+        "-borrowed_date"
+    )
+    serializer_class = BorrowingSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_class = BorrowingFilter
+    filter_backends = [DjangoFilterBackend, ActiveBorrowingsFilterBackend]

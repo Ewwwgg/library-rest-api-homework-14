@@ -24,6 +24,17 @@ class LibraryAPITests(TestCase):
         )
         self.reader = get_user_model().objects.create_user(username="reader")
 
+    def create_book(self, *, title, isbn, pages, published_date, available_copies=1):
+        return Book.objects.create(
+            title=title,
+            author=self.author,
+            description="A book created for filtering tests.",
+            isbn=isbn,
+            published_date=published_date,
+            pages=pages,
+            available_copies=available_copies,
+        )
+
     def test_author_list_uses_count_and_data_envelope(self):
         response = self.client.get(reverse("library:author_list_create"))
 
@@ -136,10 +147,92 @@ class LibraryAPITests(TestCase):
         self.assertEqual(response.data["count"], 1)
         self.assertTrue(response.data["data"][0]["is_available"])
 
+    def test_available_books_backend_enforces_stock_and_supports_filters(self):
+        self.create_book(
+            title="Out of stock",
+            isbn="1234567890124",
+            pages=250,
+            published_date=date(2024, 1, 1),
+            available_copies=0,
+        )
+
+        response = self.client.get(
+            reverse("library:available_books"),
+            {"pages__gte": 200},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+
+    def test_book_filter_supports_text_author_date_page_and_stock_lookups(self):
+        matched_book = self.create_book(
+            title="The Kobzar",
+            isbn="1234567890124",
+            pages=250,
+            published_date=date(1840, 1, 1),
+            available_copies=3,
+        )
+        other_book = self.create_book(
+            title="Another Book",
+            isbn="1234567890125",
+            pages=90,
+            published_date=date(1850, 1, 1),
+        )
+        endpoint = reverse("library:book_list_create")
+
+        cases = (
+            ({"title__iexact": "THE KOBZAR"}, [matched_book.pk]),
+            ({"title__icontains": "kob"}, [matched_book.pk]),
+            (
+                {"author": self.author.pk},
+                [self.book.pk, matched_book.pk, other_book.pk],
+            ),
+            ({"published_date": "1840-01-01"}, [matched_book.pk]),
+            ({"published_date__year": 1840}, [matched_book.pk]),
+            ({"published_date__year__gt": 1840}, [self.book.pk, other_book.pk]),
+            ({"published_date__year__lt": 1840}, []),
+            ({"pages": 250}, [matched_book.pk]),
+            ({"pages__lt": 200}, [self.book.pk, other_book.pk]),
+            ({"pages__lte": 100}, [self.book.pk, other_book.pk]),
+            ({"pages__gt": 200}, [matched_book.pk]),
+            ({"pages__gte": 250}, [matched_book.pk]),
+            ({"pages__range": "200,300"}, [matched_book.pk]),
+            ({"available_copies": 3}, [matched_book.pk]),
+            ({"available_copies__gt": 1}, [matched_book.pk]),
+        )
+
+        for params, expected_ids in cases:
+            with self.subTest(params=params):
+                response = self.client.get(endpoint, params)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    sorted(item["id"] for item in response.data["data"]),
+                    sorted(expected_ids),
+                )
+
+    def test_min_pages_backend_filters_books_and_rejects_invalid_value(self):
+        long_book = self.create_book(
+            title="Long Book",
+            isbn="1234567890124",
+            pages=300,
+            published_date=date(2024, 1, 1),
+        )
+        endpoint = reverse("library:book_list_create")
+
+        response = self.client.get(endpoint, {"min_pages": "200"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data["data"]], [long_book.pk])
+
+        invalid_response = self.client.get(endpoint, {"min_pages": "many"})
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertIn("min_pages", invalid_response.data)
+
     def test_borrowing_list_includes_nested_names_and_days(self):
         borrowing = Borrowing.objects.create(book=self.book, reader=self.reader)
         borrowing.borrowed_date = date.today() - timedelta(days=3)
         borrowing.save(update_fields=("borrowed_date",))
+        self.client.force_authenticate(user=self.reader)
 
         response = self.client.get(reverse("library:borrowing_list_create"))
 
@@ -151,6 +244,7 @@ class LibraryAPITests(TestCase):
         self.assertEqual(result["book"]["isbn"], self.book.isbn)
 
     def test_borrowing_list_create_endpoint_creates_borrowing(self):
+        self.client.force_authenticate(user=self.reader)
         response = self.client.post(
             reverse("library:borrowing_list_create"),
             {"book_id": self.book.pk, "reader_id": self.reader.pk},
@@ -161,6 +255,77 @@ class LibraryAPITests(TestCase):
         self.assertTrue(
             Borrowing.objects.filter(book=self.book, reader=self.reader).exists()
         )
+
+    def test_borrowing_filters_related_fields_dates_and_returned_state(self):
+        active = Borrowing.objects.create(book=self.book, reader=self.reader)
+        active.borrowed_date = date(2024, 5, 10)
+        active.save(update_fields=("borrowed_date",))
+        returned_reader = get_user_model().objects.create_user(username="john_reader")
+        returned = Borrowing.objects.create(
+            book=self.book,
+            reader=returned_reader,
+            is_returned=True,
+            return_date=date(2024, 5, 15),
+        )
+        returned.borrowed_date = date(2024, 5, 12)
+        returned.save(update_fields=("borrowed_date",))
+        other_book = self.create_book(
+            title="Different Title",
+            isbn="1234567890124",
+            pages=100,
+            published_date=date(2024, 1, 1),
+        )
+        other = Borrowing.objects.create(book=other_book, reader=self.reader)
+        other.borrowed_date = date(2025, 6, 1)
+        other.save(update_fields=("borrowed_date",))
+        endpoint = reverse("library:borrowing_list_create")
+        cases = (
+            ({"reader": self.reader.pk}, [active.pk, other.pk]),
+            ({"reader__username__icontains": "JOHN"}, [returned.pk]),
+            ({"book": self.book.pk}, [active.pk, returned.pk]),
+            ({"book__title__icontains": "available"}, [active.pk, returned.pk]),
+            ({"borrowed_date": "2024-05-10"}, [active.pk]),
+            ({"borrowed_date__year": 2024}, [active.pk, returned.pk]),
+            ({"borrowed_date__month": 5}, [active.pk, returned.pk]),
+            ({"borrowed_date__year__gte": 2025}, [other.pk]),
+            ({"is_returned": "false"}, [active.pk, other.pk]),
+            ({"is_returned": "true"}, [returned.pk]),
+        )
+        self.client.force_authenticate(user=self.reader)
+
+        for params, expected_ids in cases:
+            with self.subTest(params=params):
+                response = self.client.get(endpoint, params)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    sorted(item["id"] for item in response.data["data"]),
+                    sorted(expected_ids),
+                )
+
+    def test_active_borrowings_backend_enforces_active_state_and_filters(self):
+        active = Borrowing.objects.create(book=self.book, reader=self.reader)
+        active.borrowed_date = date(2024, 5, 10)
+        active.save(update_fields=("borrowed_date",))
+        Borrowing.objects.create(
+            book=self.book,
+            reader=self.reader,
+            is_returned=True,
+            return_date=date.today(),
+        )
+        self.client.force_authenticate(user=self.reader)
+
+        response = self.client.get(
+            reverse("library:active_borrowings"),
+            {"is_returned": "true"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+
+    def test_borrowing_endpoints_require_authentication(self):
+        response = self.client.get(reverse("library:borrowing_list_create"))
+
+        self.assertEqual(response.status_code, 403)
 
     def test_book_serializer_rejects_nonpositive_pages_and_invalid_isbn_length(self):
         serializer = BookSerializer(
