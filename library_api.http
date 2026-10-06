@@ -1,0 +1,55 @@
+@baseUrl = http://127.0.0.1:8000
+@password = StrongPassword123!
+
+### Landing page
+GET {{baseUrl}}/
+
+### Successful reader registration (201; includes access and refresh JWTs)
+# @name registerReader
+POST {{baseUrl}}/api/register/
+Content-Type: application/json
+
+{
+  "username": "reader_taras",
+  "email": "taras.reader@example.com",
+  "phone": "+380501234567",
+  "address": "м. Київ, вул. Хрещатик, 1",
+  "password": "{{password}}",
+  "password_confirm": "{{password}}"
+}
+
+### Registration with mismatched passwords (400)
+POST {{baseUrl}}/api/register/
+Content-Type: application/json
+
+{
+  "username": "reader_fail",
+  "email": "fail@example.com",
+  "password": "{{password}}",
+  "password_confirm": "DifferentPassword456!"
+}
+
+### Obtain JWT tokens (200)
+# @name loginReader
+POST {{baseUrl}}/api/token/
+Content-Type: application/json
+
+{
+  "username": "reader_taras",
+  "password": "{{password}}"
+}
+
+### List borrowings with the JWT access token from loginReader
+GET {{baseUrl}}/api/borrowings/
+Authorization: Bearer {{loginReader.response.body.$.access}}
+
+### Repeat this request more than five times in one minute to receive 429
+POST {{baseUrl}}/api/register/
+Content-Type: application/json
+
+{
+  "username": "reader_throttle",
+  "email": "reader-throttle@example.com",
+  "password": "{{password}}",
+  "password_confirm": "{{password}}"
+}

@@ -1,7 +1,11 @@
+from django.contrib.auth import get_user_model
+from django.shortcuts import render
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .filters import (
     ActiveBorrowingsFilterBackend,
@@ -16,7 +20,39 @@ from .serializers import (
     BookDetailSerializer,
     BookSerializer,
     BorrowingSerializer,
+    ReaderRegisterSerializer,
 )
+from .throttles import (
+    BorrowingRateThrottle,
+    BurstRateThrottle,
+    RegisterRateThrottle,
+    SustainedRateThrottle,
+)
+
+
+def landing_page(request):
+    return render(request, "index.html")
+
+
+class ReaderRegisterAPIView(generics.CreateAPIView):
+    queryset = get_user_model().objects.all()
+    serializer_class = ReaderRegisterSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle, RegisterRateThrottle]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reader = serializer.save()
+
+        refresh = RefreshToken.for_user(reader)
+        response_data = {
+            **serializer.data,
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
+        headers = self.get_success_headers(serializer.data)
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class CountDataListMixin:
@@ -42,6 +78,12 @@ class BookListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
     serializer_class = BookSerializer
     filterset_class = BookFilter
     filter_backends = [DjangoFilterBackend, MinPagesFilterBackend]
+    throttle_classes = [
+        AnonRateThrottle,
+        UserRateThrottle,
+        BurstRateThrottle,
+        SustainedRateThrottle,
+    ]
 
 
 class BookDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -54,6 +96,7 @@ class BorrowingListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView)
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = BorrowingFilter
+    throttle_classes = [UserRateThrottle, BorrowingRateThrottle]
 
 
 class AvailableBooksAPIView(CountDataListMixin, generics.ListAPIView):
@@ -71,3 +114,4 @@ class ActiveBorrowingsAPIView(CountDataListMixin, generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     filterset_class = BorrowingFilter
     filter_backends = [DjangoFilterBackend, ActiveBorrowingsFilterBackend]
+    throttle_classes = [UserRateThrottle, BorrowingRateThrottle]

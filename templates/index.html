@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b1120">
+    <title>Library API — Developer Portal</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0b1120;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --primary: #38bdf8;
+            --green: #4ade80;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 2.5rem 1rem;
+            background: var(--bg);
+            color: var(--text);
+            font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+
+        a { color: inherit; }
+        .container { width: min(100%, 1000px); margin: auto; }
+        header { margin-bottom: 2rem; text-align: center; }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            margin-bottom: 1rem;
+            padding: .35rem .85rem;
+            border: 1px solid #166534;
+            border-radius: 999px;
+            background: #14532d44;
+            color: var(--green);
+            font-size: .85rem;
+            font-weight: 600;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+        }
+
+        h1 {
+            margin: 0 0 .75rem;
+            background: linear-gradient(135deg, var(--primary), #818cf8);
+            background-clip: text;
+            color: transparent;
+            font-size: clamp(2rem, 6vw, 2.8rem);
+            line-height: 1.15;
+        }
+
+        .subtitle {
+            max-width: 680px;
+            margin: auto;
+            color: var(--muted);
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .card {
+            display: flex;
+            min-height: 185px;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--card);
+            text-decoration: none;
+            transition: transform .2s ease, border-color .2s ease;
+        }
+
+        .card:hover, .card:focus-visible {
+            transform: translateY(-3px);
+            border-color: var(--primary);
+        }
+
+        .icon { margin-bottom: .6rem; font-size: 1.7rem; }
+        .card h2 { margin: 0 0 .35rem; font-size: 1.1rem; }
+        .card p { margin: 0 0 .8rem; color: var(--muted); font-size: .9rem; }
+        .link, a.endpoint:hover { color: var(--primary); }
+        h2.section-title { margin: 2rem 0 .9rem; font-size: 1.25rem; }
+
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--card);
+        }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: .8rem 1rem; border-bottom: 1px solid var(--border); }
+        th { color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+        tr:last-child td { border-bottom: 0; }
+        td { font-size: .9rem; }
+        a.endpoint { font-family: ui-monospace, Consolas, monospace; text-decoration: none; }
+
+        .method {
+            display: inline-block;
+            min-width: 3.5rem;
+            padding: .15rem .4rem;
+            border-radius: 5px;
+            background: #0369a144;
+            color: #7dd3fc;
+            font-size: .75rem;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .method.post { background: #16a34a33; color: var(--green); }
+        .muted { color: var(--muted); }
+        footer { padding: 1.5rem 0; color: var(--muted); text-align: center; font-size: .85rem; }
+
+        @media (max-width: 600px) {
+            body { padding-top: 1.5rem; }
+            th, td { padding: .7rem; }
+            .optional { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <header>
+            <div class="status"><span class="dot"></span> Library API v1.0 · Online</div>
+            <h1>Library API Developer Portal</h1>
+            <p class="subtitle">
+                Вітаємо в API електронної бібліотеки. Перегляньте документацію,
+                каталог книг та основні endpoints.
+            </p>
+        </header>
+
+        <section class="cards" aria-label="Корисні посилання">
+            <a class="card" href="{% url 'swagger-ui' %}">
+                <div>
+                    <div class="icon" aria-hidden="true">⚡</div>
+                    <h2>Swagger UI</h2>
+                    <p>Інтерактивне тестування запитів API.</p>
+                </div>
+                <span class="link">Відкрити Swagger →</span>
+            </a>
+            <a class="card" href="{% url 'redoc' %}">
+                <div>
+                    <div class="icon" aria-hidden="true">📖</div>
+                    <h2>ReDoc</h2>
+                    <p>Документація та схеми API.</p>
+                </div>
+                <span class="link">Відкрити ReDoc →</span>
+            </a>
+            <a class="card" href="{% url 'admin:index' %}">
+                <div>
+                    <div class="icon" aria-hidden="true">🛠️</div>
+                    <h2>Django Admin</h2>
+                    <p>Керування книгами, авторами та читачами.</p>
+                </div>
+                <span class="link">Відкрити адмінку →</span>
+            </a>
+            <a class="card" href="{% url 'library:book_list_create' %}">
+                <div>
+                    <div class="icon" aria-hidden="true">📚</div>
+                    <h2>Каталог книг</h2>
+                    <p>Книги з підтримкою фільтрації.</p>
+                </div>
+                <span class="link">Переглянути книги →</span>
+            </a>
+        </section>
+
+        <h2 class="section-title">Головні endpoints</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Метод</th><th>Endpoint</th><th>Опис</th><th class="optional">Доступ</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="method">GET</span></td>
+                        <td><a class="endpoint" href="{% url 'library:book_list_create' %}">/api/books/</a></td>
+                        <td>Каталог книг</td><td class="optional">AllowAny · throttled</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method">GET</span></td>
+                        <td><a class="endpoint" href="{% url 'library:available_books' %}">/api/books/available/</a></td>
+                        <td>Книги в наявності</td><td class="optional">AllowAny · throttled</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method">GET</span></td>
+                        <td><a class="endpoint" href="{% url 'library:author_list_create' %}">/api/authors/</a></td>
+                        <td>Список авторів</td><td class="optional">AllowAny · throttled</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method post">POST</span></td>
+                        <td><a class="endpoint" href="{% url 'library:reader_register' %}">/api/register/</a></td>
+                        <td>Реєстрація читача</td><td class="optional">AllowAny · 5/min</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method post">POST</span></td>
+                        <td><a class="endpoint" href="{% url 'token_obtain_pair' %}">/api/token/</a></td>
+                        <td>Отримання JWT токенів</td><td class="optional">AllowAny · throttled</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method">GET</span></td>
+                        <td><a class="endpoint" href="{% url 'library:borrowing_list_create' %}">/api/borrowings/</a></td>
+                        <td>Історія позик</td><td class="optional">IsAuthenticated · 15/min</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <footer>Library Management System · Django REST Framework</footer>
+    </main>
+</body>
+</html>

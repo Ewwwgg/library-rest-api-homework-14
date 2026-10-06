@@ -7,6 +7,11 @@ app_name = "library"
 
 urlpatterns = [
     path(
+        "register/",
+        views.ReaderRegisterAPIView.as_view(),
+        name="reader_register",
+    ),
+    path(
         "authors/",
         views.AuthorListCreateAPIView.as_view(),
         name="author_list_create",

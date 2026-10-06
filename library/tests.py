@@ -1,8 +1,11 @@
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.test import APIClient
 
 from .models import Author, Book, Borrowing
@@ -11,6 +14,7 @@ from .serializers import BookSerializer
 
 class LibraryAPITests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.author = Author.objects.create(name="Test Author", bio="A test biography.")
         self.book = Book.objects.create(
@@ -179,6 +183,8 @@ class LibraryAPITests(TestCase):
             published_date=date(1850, 1, 1),
         )
         endpoint = reverse("library:book_list_create")
+        reader = get_user_model().objects.create_user(username="book_filter_reader")
+        self.client.force_authenticate(user=reader)
 
         cases = (
             ({"title__iexact": "THE KOBZAR"}, [matched_book.pk]),
@@ -325,7 +331,7 @@ class LibraryAPITests(TestCase):
     def test_borrowing_endpoints_require_authentication(self):
         response = self.client.get(reverse("library:borrowing_list_create"))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_book_serializer_rejects_nonpositive_pages_and_invalid_isbn_length(self):
         serializer = BookSerializer(
@@ -343,3 +349,178 @@ class LibraryAPITests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("pages", serializer.errors)
         self.assertIn("isbn", serializer.errors)
+
+
+class RegistrationAndPortalTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.registration_url = reverse("library:reader_register")
+        self.registration_data = {
+            "username": "reader_api",
+            "email": "reader@example.com",
+            "password": "StrongLibraryPassword!902",
+            "password_confirm": "StrongLibraryPassword!902",
+        }
+
+    def test_registration_hashes_password_and_returns_jwt_tokens(self):
+        response = self.client.post(
+            self.registration_url,
+            self.registration_data,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        reader = get_user_model().objects.get(username="reader_api")
+        self.assertTrue(reader.check_password(self.registration_data["password"]))
+        self.assertNotEqual(reader.password, self.registration_data["password"])
+        self.assertNotIn("password", response.data)
+        self.assertNotIn("password_confirm", response.data)
+        self.assertTrue(response.data["access"])
+        self.assertTrue(response.data["refresh"])
+
+    def test_registered_reader_can_obtain_jwt_and_access_protected_endpoint(self):
+        registration_response = self.client.post(
+            self.registration_url,
+            self.registration_data,
+            format="json",
+        )
+        self.assertEqual(registration_response.status_code, 201)
+
+        token_response = self.client.post(
+            reverse("token_obtain_pair"),
+            {
+                "username": self.registration_data["username"],
+                "password": self.registration_data["password"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(token_response.status_code, 200)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token_response.data['access']}"
+        )
+        borrowing_response = self.client.get(
+            reverse("library:borrowing_list_create")
+        )
+        self.assertEqual(borrowing_response.status_code, 200)
+
+    def test_registration_rejects_mismatched_and_weak_passwords(self):
+        mismatched_data = {
+            **self.registration_data,
+            "password_confirm": "DifferentLibraryPassword!902",
+        }
+        mismatch_response = self.client.post(
+            self.registration_url, mismatched_data, format="json"
+        )
+        weak_data = {
+            **self.registration_data,
+            "email": "weak@example.com",
+            "password": "123",
+            "password_confirm": "123",
+        }
+        weak_response = self.client.post(
+            self.registration_url, weak_data, format="json"
+        )
+
+        self.assertEqual(mismatch_response.status_code, 400)
+        self.assertIn("password_confirm", mismatch_response.data)
+        self.assertEqual(weak_response.status_code, 400)
+        self.assertIn("password", weak_response.data)
+        self.assertFalse(
+            get_user_model().objects.filter(username="reader_api").exists()
+        )
+
+    def test_registration_requires_unique_email_case_insensitively(self):
+        get_user_model().objects.create_user(
+            username="existing_reader",
+            email="reader@example.com",
+            password="AnExistingSecurePassword!902",
+        )
+
+        response = self.client.post(
+            self.registration_url,
+            self.registration_data,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+
+    def test_homepage_and_documentation_portal_routes_render(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Library API Developer Portal", response.content.decode())
+        self.assertEqual(self.client.get(reverse("swagger-ui")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("redoc")).status_code, 200)
+
+
+class ThrottlingTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def test_registration_throttle_blocks_sixth_attempt(self):
+        url = reverse("library:reader_register")
+        for index in range(5):
+            response = self.client.post(
+                url,
+                {
+                    "username": f"throttled_reader_{index}",
+                    "email": f"throttled_{index}@example.com",
+                    "password": "StrongLibraryPassword!902",
+                    "password_confirm": "StrongLibraryPassword!902",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201)
+
+        limited_response = self.client.post(
+            url,
+            {
+                "username": "throttled_reader_last",
+                "email": "throttled_last@example.com",
+                "password": "StrongLibraryPassword!902",
+                "password_confirm": "StrongLibraryPassword!902",
+            },
+            format="json",
+        )
+
+        self.assertEqual(limited_response.status_code, 429)
+
+    def test_borrowing_throttle_blocks_sixteenth_request(self):
+        reader = get_user_model().objects.create_user(username="rate_limited_reader")
+        self.client.force_authenticate(user=reader)
+        url = reverse("library:borrowing_list_create")
+
+        for _ in range(15):
+            self.assertEqual(self.client.get(url).status_code, 200)
+
+        self.assertEqual(self.client.get(url).status_code, 429)
+
+    def test_burst_throttle_blocks_third_catalog_request(self):
+        reader = get_user_model().objects.create_user(username="burst_reader")
+        self.client.force_authenticate(user=reader)
+        url = reverse("library:book_list_create")
+
+        with patch.dict(
+            SimpleRateThrottle.THROTTLE_RATES,
+            {"user": "100/minute", "burst": "2/minute"},
+        ):
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(self.client.get(url).status_code, 429)
+
+    def test_sustained_throttle_blocks_third_catalog_request(self):
+        reader = get_user_model().objects.create_user(username="sustained_reader")
+        self.client.force_authenticate(user=reader)
+        url = reverse("library:book_list_create")
+
+        with patch.dict(
+            SimpleRateThrottle.THROTTLE_RATES,
+            {"user": "100/minute", "burst": "100/minute", "sustained": "2/hour"},
+        ):
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(self.client.get(url).status_code, 429)

@@ -1,6 +1,63 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .models import Author, Book, Borrowing, Reader
+
+
+class ReaderRegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password],
+        style={"input_type": "password"},
+        help_text="Choose a strong password with at least 8 characters.",
+    )
+    password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={"input_type": "password"},
+        help_text="Enter the password again to confirm it.",
+    )
+
+    class Meta:
+        model = get_user_model()
+        fields = (
+            "id",
+            "username",
+            "email",
+            "phone",
+            "address",
+            "password",
+            "password_confirm",
+        )
+        extra_kwargs = {
+            "email": {"required": True},
+            "phone": {"required": False},
+            "address": {"required": False},
+        }
+
+    def validate_email(self, value):
+        if get_user_model().objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError(
+                "A user with this email address is already registered."
+            )
+        return value.lower()
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password_confirm"]:
+            raise serializers.ValidationError(
+                {"password_confirm": "The passwords do not match."}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop("password_confirm")
+        password = validated_data.pop("password")
+        return get_user_model().objects.create_user(
+            password=password,
+            **validated_data,
+        )
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -45,7 +102,7 @@ class BookDetailSerializer(BookSerializer):
     class Meta(BookSerializer.Meta):
         fields = BookSerializer.Meta.fields + ("total_borrowings",)
 
-    def get_total_borrowings(self, obj):
+    def get_total_borrowings(self, obj: Book) -> int:
         return obj.borrowings.count()
 
 
@@ -90,5 +147,5 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "days_borrowed",
         )
 
-    def get_days_borrowed(self, obj):
+    def get_days_borrowed(self, obj: Borrowing) -> int:
         return obj.days_borrowed

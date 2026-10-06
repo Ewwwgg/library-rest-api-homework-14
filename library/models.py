@@ -19,7 +19,7 @@ class Author(models.Model):
         return self.name
 
     @property
-    def book_count(self):
+    def book_count(self) -> int:
         return self.books.count()
 
 
@@ -37,7 +37,7 @@ class Book(models.Model):
         return self.title
 
     @property
-    def is_available(self):
+    def is_available(self) -> bool:
         return self.available_copies > 0
 
 
@@ -52,6 +52,6 @@ class Borrowing(models.Model):
         return f"{self.reader.username} borrowed {self.book.title}"
 
     @property
-    def days_borrowed(self):
+    def days_borrowed(self) -> int:
         end_date = self.return_date if self.is_returned and self.return_date else timezone.localdate()
         return (end_date - self.borrowed_date).days
