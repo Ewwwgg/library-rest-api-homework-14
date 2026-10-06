@@ -25,7 +25,7 @@ class LibraryAPITests(TestCase):
         self.reader = get_user_model().objects.create_user(username="reader")
 
     def test_author_list_uses_count_and_data_envelope(self):
-        response = self.client.get(reverse("library:author_list"))
+        response = self.client.get(reverse("library:author_list_create"))
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
@@ -37,12 +37,79 @@ class LibraryAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], self.author.pk)
 
+    def test_author_list_create_endpoint_creates_author(self):
+        response = self.client.post(
+            reverse("library:author_list_create"),
+            {"name": "New Author", "bio": "A new biography."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Author.objects.filter(name="New Author").exists())
+
+    def test_author_list_renders_browsable_api(self):
+        response = self.client.get(
+            reverse("library:author_list_create"),
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response["Content-Type"])
+
+    def test_author_detail_supports_update_and_delete(self):
+        url = reverse("library:author_detail", kwargs={"author_id": self.author.pk})
+        update_response = self.client.patch(
+            url, {"name": "Updated Author"}, format="json"
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.author.refresh_from_db()
+        self.assertEqual(self.author.name, "Updated Author")
+
+        delete_response = self.client.delete(url)
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(Author.objects.filter(pk=self.author.pk).exists())
+
     def test_book_list_uses_count_and_data_envelope(self):
-        response = self.client.get(reverse("library:book_list"))
+        response = self.client.get(reverse("library:book_list_create"))
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["data"][0]["title"], self.book.title)
+
+    def test_book_list_create_endpoint_creates_book(self):
+        response = self.client.post(
+            reverse("library:book_list_create"),
+            {
+                "title": "New Book",
+                "author": self.author.pk,
+                "description": "A newly created book.",
+                "isbn": "9876543210123",
+                "published_date": "2024-02-01",
+                "pages": 150,
+                "available_copies": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Book.objects.filter(isbn="9876543210123").exists())
+
+    def test_book_detail_supports_update_and_delete(self):
+        url = reverse("library:book_detail", args=[self.book.pk])
+        update_response = self.client.patch(
+            url, {"title": "Updated Book"}, format="json"
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.title, "Updated Book")
+
+        delete_response = self.client.delete(url)
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(Book.objects.filter(pk=self.book.pk).exists())
 
     def test_book_detail_includes_author_and_borrowing_count(self):
         Borrowing.objects.create(book=self.book, reader=self.reader)
@@ -74,7 +141,7 @@ class LibraryAPITests(TestCase):
         borrowing.borrowed_date = date.today() - timedelta(days=3)
         borrowing.save(update_fields=("borrowed_date",))
 
-        response = self.client.get(reverse("library:borrowing_list"))
+        response = self.client.get(reverse("library:borrowing_list_create"))
 
         self.assertEqual(response.status_code, 200)
         result = response.data["data"][0]
@@ -82,6 +149,18 @@ class LibraryAPITests(TestCase):
         self.assertEqual(result["reader_name"], self.reader.username)
         self.assertEqual(result["days_borrowed"], 3)
         self.assertEqual(result["book"]["isbn"], self.book.isbn)
+
+    def test_borrowing_list_create_endpoint_creates_borrowing(self):
+        response = self.client.post(
+            reverse("library:borrowing_list_create"),
+            {"book_id": self.book.pk, "reader_id": self.reader.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            Borrowing.objects.filter(book=self.book, reader=self.reader).exists()
+        )
 
     def test_book_serializer_rejects_nonpositive_pages_and_invalid_isbn_length(self):
         serializer = BookSerializer(

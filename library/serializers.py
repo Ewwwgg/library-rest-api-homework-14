@@ -64,6 +64,12 @@ class BorrowingReaderSerializer(serializers.ModelSerializer):
 class BorrowingSerializer(serializers.ModelSerializer):
     book = BorrowedBookSerializer(read_only=True)
     reader = BorrowingReaderSerializer(read_only=True)
+    book_id = serializers.PrimaryKeyRelatedField(
+        source="book", queryset=Book.objects.all(), write_only=True
+    )
+    reader_id = serializers.PrimaryKeyRelatedField(
+        source="reader", queryset=Reader.objects.all(), write_only=True
+    )
     book_title = serializers.CharField(source="book.title", read_only=True)
     reader_name = serializers.CharField(source="reader.username", read_only=True)
     days_borrowed = serializers.SerializerMethodField()
@@ -74,6 +80,8 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "id",
             "book",
             "reader",
+            "book_id",
+            "reader_id",
             "book_title",
             "reader_name",
             "borrowed_date",

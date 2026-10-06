@@ -6,10 +6,26 @@ from . import views
 app_name = "library"
 
 urlpatterns = [
-    path("authors/", views.author_list, name="author_list"),
-    path("authors/<int:pk>/", views.author_detail, name="author_detail"),
-    path("books/", views.book_list, name="book_list"),
-    path("books/<int:pk>/", views.book_detail, name="book_detail"),
-    path("borrowings/", views.borrowing_list, name="borrowing_list"),
-    path("books/available/", views.available_books, name="available_books"),
+    path(
+        "authors/",
+        views.AuthorListCreateAPIView.as_view(),
+        name="author_list_create",
+    ),
+    path(
+        "authors/<int:author_id>/",
+        views.AuthorDetailAPIView.as_view(),
+        name="author_detail",
+    ),
+    path("books/", views.BookListCreateAPIView.as_view(), name="book_list_create"),
+    path("books/<int:pk>/", views.BookDetailAPIView.as_view(), name="book_detail"),
+    path(
+        "borrowings/",
+        views.BorrowingListCreateAPIView.as_view(),
+        name="borrowing_list_create",
+    ),
+    path(
+        "books/available/",
+        views.AvailableBookListAPIView.as_view(),
+        name="available_books",
+    ),
 ]
