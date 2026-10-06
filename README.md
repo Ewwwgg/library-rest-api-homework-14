@@ -14,7 +14,19 @@ python manage.py populate_library
 python manage.py runserver
 ```
 
+Run the automated tests with coverage:
+
+```powershell
+python -m pytest
+python -m pytest --cov=library --cov-report=term-missing
+python -m pytest --cov=library --cov-report=html
+```
+
+The test suite uses `pytest-django` and `model_bakery`; reusable API and model fixtures are in the root `conftest.py`, with tests organized under `library/tests/`. The coverage target is at least 80%.
+
 The developer portal is available at `/`. The API is available under `/api/`; list endpoints return a `count` and `data` object. Author and book endpoints support creating items with `POST`; detail endpoints support `PUT`, `PATCH`, and `DELETE`. Borrowing endpoints require an authenticated user; borrowings can be created with `POST` using `book_id` and `reader_id`. Register a reader at `/api/register/`, then request JWT tokens at `/api/token/`. Books and borrowings support `django-filter` query parameters. The available books and active borrowings endpoints also enforce their respective stock/return-state filters. Books support `?min_pages=200`; invalid values return HTTP 400.
+
+Book catalog reads are public, while creating, updating, or deleting books requires a staff user. Readers can only view their own borrowing records and create a borrowing for their own account.
 
 | Endpoint | Description |
 | --- | --- |

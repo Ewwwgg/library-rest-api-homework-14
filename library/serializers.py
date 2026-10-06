@@ -119,13 +119,17 @@ class BorrowingReaderSerializer(serializers.ModelSerializer):
 
 
 class BorrowingSerializer(serializers.ModelSerializer):
-    book = BorrowedBookSerializer(read_only=True)
-    reader = BorrowingReaderSerializer(read_only=True)
+    book = serializers.PrimaryKeyRelatedField(
+        queryset=Book.objects.all(), required=False, write_only=True
+    )
+    reader = serializers.PrimaryKeyRelatedField(
+        queryset=Reader.objects.all(), required=False, write_only=True
+    )
     book_id = serializers.PrimaryKeyRelatedField(
-        source="book", queryset=Book.objects.all(), write_only=True
+        source="book", queryset=Book.objects.all(), write_only=True, required=False
     )
     reader_id = serializers.PrimaryKeyRelatedField(
-        source="reader", queryset=Reader.objects.all(), write_only=True
+        source="reader", queryset=Reader.objects.all(), write_only=True, required=False
     )
     book_title = serializers.CharField(source="book.title", read_only=True)
     reader_name = serializers.CharField(source="reader.username", read_only=True)
@@ -149,3 +153,20 @@ class BorrowingSerializer(serializers.ModelSerializer):
 
     def get_days_borrowed(self, obj: Borrowing) -> int:
         return obj.days_borrowed
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if self.instance is None and "book" not in attrs:
+            raise serializers.ValidationError({"book_id": "This field is required."})
+        reader = attrs.get("reader")
+        if request and reader and reader != request.user:
+            raise serializers.ValidationError(
+                {"reader_id": "You can only create borrowings for your own account."}
+            )
+        return attrs
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["book"] = BorrowedBookSerializer(instance.book).data
+        representation["reader"] = BorrowingReaderSerializer(instance.reader).data
+        return representation

@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import render
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -28,6 +28,17 @@ from .throttles import (
     RegisterRateThrottle,
     SustainedRateThrottle,
 )
+
+
+class IsAdminOrReadOnly(BasePermission):
+    def has_permission(self, request, view):
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_staff
+        )
 
 
 def landing_page(request):
@@ -76,6 +87,7 @@ class AuthorDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class BookListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
     queryset = Book.objects.select_related("author").all()
     serializer_class = BookSerializer
+    permission_classes = [IsAdminOrReadOnly]
     filterset_class = BookFilter
     filter_backends = [DjangoFilterBackend, MinPagesFilterBackend]
     throttle_classes = [
@@ -89,14 +101,22 @@ class BookListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
 class BookDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Book.objects.select_related("author").prefetch_related("borrowings")
     serializer_class = BookDetailSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class BorrowingListCreateAPIView(CountDataListMixin, generics.ListCreateAPIView):
-    queryset = Borrowing.objects.select_related("book", "reader").all()
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = BorrowingFilter
     throttle_classes = [UserRateThrottle, BorrowingRateThrottle]
+
+    def get_queryset(self):
+        return Borrowing.objects.select_related("book", "reader").filter(
+            reader=self.request.user
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(reader=self.request.user)
 
 
 class AvailableBooksAPIView(CountDataListMixin, generics.ListAPIView):
@@ -107,11 +127,13 @@ class AvailableBooksAPIView(CountDataListMixin, generics.ListAPIView):
 
 
 class ActiveBorrowingsAPIView(CountDataListMixin, generics.ListAPIView):
-    queryset = Borrowing.objects.select_related("book", "reader").order_by(
-        "-borrowed_date"
-    )
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = BorrowingFilter
     filter_backends = [DjangoFilterBackend, ActiveBorrowingsFilterBackend]
     throttle_classes = [UserRateThrottle, BorrowingRateThrottle]
+
+    def get_queryset(self):
+        return Borrowing.objects.select_related("book", "reader").filter(
+            reader=self.request.user
+        ).order_by("-borrowed_date")
